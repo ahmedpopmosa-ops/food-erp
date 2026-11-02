@@ -1,6 +1,0 @@
-{
-  "name": "RestaurantOS",
-  "description": "Enterprise SaaS Restaurant Management System with offline-first POS, Kitchen Display System, Inventory, Recipes, Double-Entry Accounting, and SaaS Operator Console.",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}

@@ -3,14 +3,7 @@ import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
   {
-    ignores: [
-      '**/dist/**',
-      '**/node_modules/**',
-      '**/coverage/**',
-      '.data/**',
-      'apps/api/openapi.json',
-      'prototypes/**',
-    ],
+    ignores: ['**/dist/**', '**/node_modules/**', '**/coverage/**', '.data/**', 'apps/api/openapi.json'],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,

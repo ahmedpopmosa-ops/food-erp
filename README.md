@@ -11,18 +11,17 @@ operator console UI and the Tauri POS shell are not started. See
 
 ## Repository
 
-| Path                   | What                                                                            |
-| ---------------------- | ------------------------------------------------------------------------------- |
-| `apps/api`             | NestJS 11 API, Prisma 6, SQL migrations with RLS, Jest integration tests        |
-| `apps/web`             | Restaurant dashboard (React + Vite)                                             |
-| `apps/pos`             | Browser POS: `pos-core` in the browser with SQLite in OPFS                      |
-| `packages/contracts`   | Zod schemas, permission catalog, role templates — shared by all apps            |
-| `packages/domain`      | Pure business rules: `Money` (decimal, no floats), tax, order totals, states    |
-| `packages/pos-core`    | Offline POS core: local schema, outbox, sync client, receipts                   |
-| `infra/`               | API Dockerfile, PostgreSQL init script                                          |
-| `scripts/local-db.mjs` | Embedded PostgreSQL for machines without Docker                                 |
-| `docs/`                | Design documents and ADRs                                                       |
-| `prototypes/ai-studio` | Separate client-only AI Studio prototype (`localStorage`, not an npm workspace) |
+| Path                   | What                                                                         |
+| ---------------------- | ---------------------------------------------------------------------------- |
+| `apps/api`             | NestJS 11 API, Prisma 6, SQL migrations with RLS, Jest integration tests     |
+| `apps/web`             | Restaurant dashboard (React + Vite)                                          |
+| `apps/pos`             | Browser POS: `pos-core` in the browser with SQLite in OPFS                   |
+| `packages/contracts`   | Zod schemas, permission catalog, role templates — shared by all apps         |
+| `packages/domain`      | Pure business rules: `Money` (decimal, no floats), tax, order totals, states |
+| `packages/pos-core`    | Offline POS core: local schema, outbox, sync client, receipts                |
+| `infra/`               | API Dockerfile, PostgreSQL init script                                       |
+| `scripts/local-db.mjs` | Embedded PostgreSQL for machines without Docker                              |
+| `docs/`                | Design documents and ADRs                                                    |
 
 ## Run locally
 
