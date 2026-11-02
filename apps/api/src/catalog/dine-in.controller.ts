@@ -1,11 +1,13 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Put } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Put } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import {
   modifierGroupCreateSchema,
   productModifierGroupsSchema,
   tableCreateSchema,
+  tableUpdateSchema,
   type ModifierGroupCreateInput,
   type TableCreateInput,
+  type TableUpdateInput,
 } from '@ros/contracts';
 import { DineInService } from './dine-in.service';
 import { RequirePermissions, Tenant, type TenantContext } from '../common/auth-context';
@@ -58,5 +60,16 @@ export class DineInController {
     @Body(new ZodPipe(tableCreateSchema)) body: TableCreateInput,
   ) {
     return this.dineIn.createTable(auth, id, body);
+  }
+
+  @RequirePermissions('setup.branches.manage')
+  @Patch('tables/:id')
+  @ApiZodBody(tableUpdateSchema)
+  updateTable(
+    @Tenant() auth: TenantContext,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(new ZodPipe(tableUpdateSchema)) body: TableUpdateInput,
+  ) {
+    return this.dineIn.updateTable(auth, id, body);
   }
 }

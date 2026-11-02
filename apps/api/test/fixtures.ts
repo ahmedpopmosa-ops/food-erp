@@ -617,6 +617,13 @@ export async function buildFixtures() {
     await owner.diningTable.create({
       data: { tenantId: a.tenantId, branchId: a.branchId, serviceAreaId: hall.id, label: 'T1' },
     });
+    // A tenant-B table: IDOR target for table edits. Stopped, so B's tills (dine-in suite) do not show it.
+    const hallB = await owner.serviceArea.create({
+      data: { tenantId: b.tenantId, branchId: b.branchId, nameAr: 'الصالة', nameEn: 'Main hall' },
+    });
+    await owner.diningTable.create({
+      data: { tenantId: b.tenantId, branchId: b.branchId, serviceAreaId: hallB.id, label: 'B1', isActive: false },
+    });
 
     // POS staff with PINs (A: cashier + manager; B: one cashier, an IDOR target).
     const pinHash = await hashPin(TEST_PIN, 1000);
@@ -747,6 +754,7 @@ export async function loadFixtures() {
       membershipManagerA: await membership(a.id, EMAILS.managerA),
       membershipNopermA: await membership(a.id, EMAILS.nopermA),
       categoryB: await owner.category.findFirstOrThrow({ where: { tenantId: b.id } }),
+      tableB: await owner.diningTable.findFirstOrThrow({ where: { tenantId: b.id } }),
       productB: await owner.product.findFirstOrThrow({ where: { tenantId: b.id } }),
       variantB: await owner.productVariant.findFirstOrThrow({ where: { tenantId: b.id } }),
       deviceB: await owner.device.findFirstOrThrow({ where: { tenantId: b.id } }),

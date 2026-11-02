@@ -69,6 +69,23 @@ describe('dine-in service on two offline tills', () => {
     tableId = table.body.id;
     await call(ownerB, 'POST', `/api/v1/branches/${fx.branchB1.id}/tables`).send({ label: 'T1' }).expect(409);
 
+    // Editing: labels stay unique, an area is named in both languages, tables are deactivated (never deleted).
+    const spare = await call(ownerB, 'POST', `/api/v1/branches/${fx.branchB1.id}/tables`)
+      .send({ label: 'T9' })
+      .expect(201);
+    await call(ownerB, 'PATCH', `/api/v1/tables/${spare.body.id}`).send({ label: 'T1' }).expect(409);
+    await call(ownerB, 'PATCH', `/api/v1/tables/${spare.body.id}`).send({ areaNameAr: 'التراس' }).expect(400);
+    await call(ownerB, 'PATCH', `/api/v1/tables/${spare.body.id}`)
+      .send({ seats: 6, areaNameAr: 'التراس', areaNameEn: 'Terrace', isActive: false })
+      .expect(200);
+    const plan = (await ownerB.agent.get(`/api/v1/branches/${fx.branchB1.id}/tables`).expect(200)).body as {
+      nameEn: string;
+      tables: { label: string; seats: number; isActive: boolean }[];
+    }[];
+    expect(plan.find((a) => a.nameEn === 'Terrace')?.tables).toEqual([
+      expect.objectContaining({ label: 'T9', seats: 6, isActive: false }),
+    ]);
+
     const taxCats = (await ownerB.agent.get('/api/v1/catalog/tax-categories').expect(200)).body as {
       id: string;
       code: string;

@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import type { ModifierGroupCreateInput, TableCreateInput } from '@ros/contracts';
+import type { ModifierGroupCreateInput, TableCreateInput, TableUpdateInput } from '@ros/contracts';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../identity/audit/audit.service';
 import { badRequest, conflict, isUniqueViolation, notFound } from '../common/errors';
@@ -117,6 +117,43 @@ export class DineInService {
           changes: { ...input },
         });
         return table;
+      });
+    } catch (err) {
+      if (isUniqueViolation(err))
+        throw conflict('tables.duplicateLabel', 'A table with this label already exists in the branch');
+      throw err;
+    }
+  }
+
+  /** Renames, resizes, moves or (de)activates a table; the tills get the change with the next pull. */
+  async updateTable(auth: TenantContext, id: string, input: TableUpdateInput) {
+    const tenantId = auth.tenantId;
+    try {
+      return await this.prisma.withTenant(tenantId, async (tx) => {
+        const table = await tx.diningTable.findFirst({ where: { id, tenantId } });
+        if (!table || !canAccessBranch(auth, table.branchId)) throw notFound('tables');
+        const { areaNameAr, areaNameEn, ...fields } = input;
+        let serviceAreaId: string | undefined;
+        if (areaNameAr !== undefined && areaNameEn !== undefined) {
+          serviceAreaId = (
+            (await tx.serviceArea.findFirst({ where: { branchId: table.branchId, nameEn: areaNameEn } })) ??
+            (await tx.serviceArea.create({
+              data: { tenantId, branchId: table.branchId, nameAr: areaNameAr, nameEn: areaNameEn },
+            }))
+          ).id;
+        }
+        const updated = await tx.diningTable.update({
+          where: { id },
+          data: { ...fields, ...(serviceAreaId ? { serviceAreaId } : {}) },
+        });
+        await this.audit.record(tx, tenantId, this.audit.user(auth), {
+          action: 'table.updated',
+          entityType: 'dining_table',
+          entityId: id,
+          branchId: table.branchId,
+          changes: { ...input },
+        });
+        return updated;
       });
     } catch (err) {
       if (isUniqueViolation(err))

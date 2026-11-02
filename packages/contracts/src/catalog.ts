@@ -96,6 +96,24 @@ export const tableCreateSchema = z.object({
 });
 export type TableCreateInput = z.infer<typeof tableCreateSchema>;
 
+/**
+ * Edits a table. Moving it to another area names the area (found or created, like on create). Tables are
+ * deactivated, never deleted: past orders and invoices point at them.
+ */
+export const tableUpdateSchema = z
+  .object({
+    label: z.string().trim().min(1).max(12).optional(),
+    seats: z.number().int().min(1).max(50).optional(),
+    areaNameAr: z.string().trim().min(1).max(60).optional(),
+    areaNameEn: z.string().trim().min(1).max(60).optional(),
+    isActive: z.boolean().optional(),
+  })
+  .refine((v) => (v.areaNameAr === undefined) === (v.areaNameEn === undefined), {
+    message: 'Give the area name in both languages',
+    path: ['areaNameEn'],
+  });
+export type TableUpdateInput = z.infer<typeof tableUpdateSchema>;
+
 export const discountSpec = z.discriminatedUnion('kind', [
   z.object({
     kind: z.literal('percent'),

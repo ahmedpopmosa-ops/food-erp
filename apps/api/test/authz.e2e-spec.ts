@@ -83,6 +83,7 @@ describe('authorization', () => {
       'PATCH /api/v1/roles/:id': { id: () => fx.roleOwnerB.id, body: () => ({ name: 'Hijacked', rowVersion: 1 }) },
       'DELETE /api/v1/roles/:id': { id: () => fx.roleOwnerB.id },
       'PATCH /api/v1/members/:id': { id: () => fx.membershipOwnerB.id, body: () => ({ status: 'disabled' }) },
+      'PATCH /api/v1/tables/:id': { id: () => fx.tableB.id, body: () => ({ isActive: false }) },
       'PATCH /api/v1/catalog/categories/:id': {
         id: () => fx.categoryB.id,
         body: () => ({ nameEn: 'Hijacked', rowVersion: 1 }),

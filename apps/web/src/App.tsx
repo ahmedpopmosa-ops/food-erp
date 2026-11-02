@@ -4,6 +4,7 @@ import { api, errorCode } from './api';
 import { useI18n } from './i18n';
 import { Alert, Button, Field, Input, Loading } from './ui';
 import { DevicesPage, InvoicesPage, ProductsPage } from './pages';
+import { TablesPage } from './tables';
 import { AccountingSection } from './accounting';
 import { InventoryPage } from './inventory';
 import { KitchenPage } from './kitchen';
@@ -111,6 +112,7 @@ function Shell({ me }: { me: Me }) {
   const nav = [
     { path: '/products', label: t.nav.products, show: can('catalog.view') },
     { path: '/devices', label: t.nav.devices, show: can('setup.devices.manage') },
+    { path: '/tables', label: t.nav.tables, show: can('setup.branches.view') },
     { path: '/invoices', label: t.nav.invoices, show: can('sales.view') },
     { path: '/kitchen', label: t.nav.kitchen, show: can('kitchen.view') },
     { path: '/inventory', label: t.nav.inventory, show: can('inventory.view') },
@@ -149,6 +151,8 @@ function Shell({ me }: { me: Me }) {
       <main className="mx-auto w-full max-w-6xl flex-1 p-4">
         {section === 'devices' ? (
           <DevicesPage />
+        ) : section === 'tables' ? (
+          <TablesPage canManage={can('setup.branches.manage')} />
         ) : section === 'invoices' ? (
           <InvoicesPage id={id} go={go} />
         ) : section === 'accounting' ? (

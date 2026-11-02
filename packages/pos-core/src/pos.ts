@@ -1132,18 +1132,22 @@ export class PosCore {
 
   // ── Tables: transfer, merge, split, cancel ─────────────────────────────────
 
-  /** Floor plan of this branch with the open order (if any) at each table. */
+  /**
+   * Floor plan of this branch with the open order (if any) at each table. A deactivated table is left out,
+   * unless it still has an open order (it stays until that order is paid or moved); empty areas are left out.
+   */
   async tables() {
     const areas = await this.refs.list<{ id: string; nameAr: string; nameEn: string; sort: number }>('service_area');
+    const open = await this.db.all<{ id: string; table_id: string; opened_at: string }>(
+      "SELECT id, table_id, opened_at FROM orders WHERE status = 'open' AND table_id IS NOT NULL",
+    );
     const tables = (
       await this.refs.list<{ id: string; serviceAreaId: string; label: string; seats: number; isActive: boolean }>(
         'dining_table',
       )
-    ).filter((t) => t.isActive);
-    const open = await this.db.all<{ id: string; table_id: string; opened_at: string }>(
-      "SELECT id, table_id, opened_at FROM orders WHERE status = 'open' AND table_id IS NOT NULL",
-    );
+    ).filter((t) => t.isActive || open.some((o) => o.table_id === t.id));
     return areas
+      .filter((a) => tables.some((t) => t.serviceAreaId === a.id))
       .sort((a, b) => a.sort - b.sort)
       .map((a) => ({
         ...a,
@@ -1343,7 +1347,8 @@ export class PosCore {
   }
 
   private async assertTableFree(tableId: string) {
-    if (!(await this.refs.get('dining_table', tableId))) throw new PosError('not_found', 'Table not found');
+    const table = await this.refs.get<{ isActive?: boolean }>('dining_table', tableId);
+    if (!table || table.isActive === false) throw new PosError('not_found', 'Table not found');
     if (await one(this.db, "SELECT id FROM orders WHERE status = 'open' AND table_id = ?", [tableId]))
       throw new PosError('table_occupied', 'This table already has an open order');
   }

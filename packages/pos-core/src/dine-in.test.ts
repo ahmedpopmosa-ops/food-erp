@@ -185,6 +185,29 @@ describe('dine-in POS (Phase 4b)', () => {
     ]);
   });
 
+  it('keeps a deactivated table only while it still has an open order, and seats nobody new there', async () => {
+    const order = await pos.openOrder('dine_in', { tableId: IDS.table2 });
+    const deactivate = (id: string, label: string) =>
+      db.batch(
+        pos.refs.changeStatements([
+          {
+            entity_type: 'dining_table',
+            op: 'upsert',
+            id,
+            data: { id, serviceAreaId: IDS.hall, label, seats: 2, isActive: false },
+          },
+        ]),
+      );
+    await deactivate(IDS.table1, 'T1');
+    await deactivate(IDS.table2, 'T2');
+    expect((await pos.tables())[0]!.tables.map((t) => t.label)).toEqual(['T2']);
+    await expect(pos.openOrder('dine_in', { tableId: IDS.table1 })).rejects.toMatchObject({ code: 'not_found' });
+
+    await pos.addItem(order, IDS.variant);
+    await pos.finalize(order, [{ paymentMethodId: IDS.card }]);
+    expect(await pos.tables()).toEqual([]); // no active table left: the area is not shown
+  });
+
   it('cancelling an order after it reached the kitchen needs approval and records an operation', async () => {
     const quiet = await pos.openOrder();
     await pos.addItem(quiet, IDS.variant);

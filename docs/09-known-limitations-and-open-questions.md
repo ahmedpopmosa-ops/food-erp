@@ -416,6 +416,20 @@ describes (`product_station_routes`); it needs far less set-up. Per-product over
 Known gaps: no picture upload screen in the dashboard yet (API only); no per-product pictures; the menu PDF's
 item descriptions (pizza and feteer fillings) were not imported, as products have no description field.
 
+### 1.21 Tables screen (web dashboard)
+- **Dashboard → الطاولات / Tables** (`setup.branches.view` to see, `setup.branches.manage` to change): per
+  branch, tables grouped by area; add one table or a numbered range (prefix + from/to, at most 100 at once,
+  one request per table, stops at the first failure and names it); rename, change seats, move to another area
+  (found or created by name), stop and resume using a table. New API: `PATCH /tables/:id`.
+- **Tables are stopped, never deleted** (orders and invoices point at them). On the till a stopped table
+  disappears from the floor plan unless it still has an open order (it stays until that order is paid or
+  moved), new orders cannot be opened on it, and areas with no table in use are hidden.
+- Tested: API (duplicate name, area named in both languages, stop), cross-tenant check, pos-core unit test,
+  and by hand in the browser (range add into a new area, stop, rename, duplicate refused, till after sync).
+
+Known gaps: no drag-and-drop floor layout, no area ordering or renaming, no table merge/split in the
+dashboard (the till does those).
+
 ## 2. Design limitations (accepted)
 - No real-time stock coordination between disconnected branches/devices; negative stock possible (ADR-0011).
 - Device revocation, price changes and permission changes reach an offline device only on its next sync;
