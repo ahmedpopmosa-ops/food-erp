@@ -1,0 +1,58 @@
+# Local infrastructure. Without Docker, `npm run db:local` runs an embedded PostgreSQL on the same port.
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${PG_OWNER_PASSWORD:-postgres}
+      POSTGRES_DB: restaurant_os
+      PG_APP_PASSWORD: ${PG_APP_PASSWORD:-ros_app_dev}
+    ports: ['5433:5432']
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./infra/postgres/init.sh:/docker-entrypoint-initdb.d/init.sh:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres']
+      interval: 5s
+      retries: 10
+
+  # Reserved for the worker (Phase 3+); nothing reads it yet.
+  redis:
+    image: redis:7-alpine
+    ports: ['6379:6379']
+
+  # S3-compatible storage for later phases (images, exports).
+  minio:
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-restaurantos}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-restaurantos-dev-secret}
+    ports: ['9000:9000', '9001:9001']
+    volumes: [minio:/data]
+
+  api:
+    build: { context: ., dockerfile: infra/api.Dockerfile }
+    profiles: [app]
+    depends_on:
+      postgres: { condition: service_healthy }
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgresql://ros_app:${PG_APP_PASSWORD:-ros_app_dev}@postgres:5432/restaurant_os?schema=public
+      DATABASE_OWNER_URL: postgresql://postgres:${PG_OWNER_PASSWORD:-postgres}@postgres:5432/restaurant_os?schema=public
+      API_PORT: 4000
+    ports: ['4000:4000']
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://localhost:4000/api/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      retries: 6
+
+volumes:
+  pgdata:
+  minio:

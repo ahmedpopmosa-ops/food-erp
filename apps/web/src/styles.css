@@ -1,0 +1,34 @@
+@import 'tailwindcss';
+
+@theme {
+  --font-sans: 'Segoe UI', 'Noto Sans Arabic', 'Tahoma', system-ui, sans-serif;
+  --color-brand-50: #eef7f3;
+  --color-brand-100: #d5ece2;
+  --color-brand-600: #1f7a57;
+  --color-brand-700: #186347;
+  --color-ink: #1d2327;
+  --color-muted: #5f6b73;
+  --color-line: #e3e7ea;
+  --color-surface: #f6f8f9;
+  --color-danger: #b42318;
+  --color-warning: #b54708;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: var(--color-surface);
+  color: var(--color-ink);
+}
+
+/* Numbers and codes keep LTR order inside RTL text. */
+.num {
+  direction: ltr;
+  unicode-bidi: isolate;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}

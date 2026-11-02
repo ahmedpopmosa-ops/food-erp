@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: restaurant_os_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgresql://ros_app:ros_app_ci@localhost:5432/restaurant_os_test?schema=public
+      TEST_DATABASE_OWNER_URL: postgresql://postgres:postgres@localhost:5432/restaurant_os_test?schema=public
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Create application role (NOBYPASSRLS)
+        run: |
+          psql "postgresql://postgres:postgres@localhost:5432/restaurant_os_test" -v ON_ERROR_STOP=1 \
+            -c "CREATE ROLE ros_app LOGIN PASSWORD 'ros_app_ci' NOSUPERUSER NOBYPASSRLS" \
+            -c "GRANT CONNECT ON DATABASE restaurant_os_test TO ros_app" \
+            -c "CREATE DATABASE restaurant_os_shadow"
+      - run: npm ci --ignore-scripts
+      - run: npx --workspace @ros/api prisma generate
+      - run: npm run build:packages
+      - run: npm run lint
+      - run: npm run format:check
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build -w @ros/web
+      - name: Prisma schema matches migrations
+        working-directory: apps/api
+        run: npx prisma migrate diff --from-migrations prisma/migrations --to-schema-datamodel prisma/schema.prisma --shadow-database-url "postgresql://postgres:postgres@localhost:5432/restaurant_os_shadow" --exit-code
+      - run: npm run openapi
+        env:
+          DATABASE_URL: ${{ env.TEST_DATABASE_URL }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: openapi
+          path: apps/api/openapi.json
+
+  docker:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -f infra/api.Dockerfile -t restaurant-os-api:ci .

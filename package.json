@@ -1,0 +1,44 @@
+{
+  "name": "restaurant-os",
+  "version": "0.1.0",
+  "private": true,
+  "description": "RestaurantOS - multi-tenant restaurant management system (modular monolith, offline-first POS)",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build:packages": "npm run build -w @ros/contracts -w @ros/domain && npm run build -w @ros/pos-core",
+    "db:local": "node scripts/local-db.mjs",
+    "db:migrate": "npm run db:migrate -w @ros/api",
+    "db:seed": "npm run db:seed -w @ros/api",
+    "db:import-menu": "npm run db:import-menu -w @ros/api",
+    "dev:api": "npm run dev -w @ros/api",
+    "dev:web": "npm run dev -w @ros/web",
+    "dev:pos": "npm run dev -w @ros/pos",
+    "openapi": "npm run openapi -w @ros/api",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "npm run build:packages && npm run typecheck --workspaces --if-present",
+    "test:unit": "npm run build:packages && npm test -w @ros/contracts -w @ros/domain -w @ros/pos-core",
+    "test": "npm run test:unit && npm test -w @ros/api"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.1",
+    "embedded-postgres": "^18.4.0-beta.17",
+    "eslint": "^9.39.1",
+    "prettier": "^3.6.2",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.46.4"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "allowScripts": {
+    "@embedded-postgres/windows-x64@18.4.0-beta.17": true,
+    "@prisma/client@6.19.3": true,
+    "@prisma/engines@6.19.3": true,
+    "prisma@6.19.3": true
+  }
+}

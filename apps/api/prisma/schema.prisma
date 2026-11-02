@@ -1,0 +1,1657 @@
+// RestaurantOS data model — Phase 2 (platform, identity, setup).
+// Constraints Prisma cannot express (RLS, composite same-tenant FKs, CHECKs, partial uniques, grants)
+// live in hand-written SQL migrations (ADR-0003); see docs/04-data-dictionary.md.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ───────────────────────────── Platform ─────────────────────────────
+
+model Plan {
+  id              String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code            String            @unique
+  nameAr          String            @map("name_ar")
+  nameEn          String            @map("name_en")
+  billingInterval String            @map("billing_interval")
+  price           Decimal           @db.Decimal(19, 4)
+  currencyCode    String            @map("currency_code") @db.Char(3)
+  trialDays       Int               @default(14) @map("trial_days")
+  isPublic        Boolean           @default(true) @map("is_public")
+  archivedAt      DateTime?         @map("archived_at") @db.Timestamptz(6)
+  createdAt       DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
+  entitlements    PlanEntitlement[]
+  subscriptions   Subscription[]
+
+  @@map("plans")
+}
+
+model PlanEntitlement {
+  id         String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  planId     String  @map("plan_id") @db.Uuid
+  featureKey String  @map("feature_key")
+  limitValue Int?    @map("limit_value")
+  enabled    Boolean @default(true)
+  plan       Plan    @relation(fields: [planId], references: [id])
+
+  @@unique([planId, featureKey])
+  @@map("plan_entitlements")
+}
+
+model Tenant {
+  id            String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  legalName     String          @map("legal_name")
+  displayName   String          @map("display_name")
+  slug          String          @unique
+  countryCode   String          @map("country_code") @db.Char(2)
+  defaultLocale String          @map("default_locale")
+  baseCurrency  String          @map("base_currency") @db.Char(3)
+  timezone      String
+  status        String          @default("active")
+  createdAt     DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
+  closedAt      DateTime?       @map("closed_at") @db.Timestamptz(6)
+  subscriptions Subscription[]
+  memberships   Membership[]
+  settings      TenantSettings?
+  branches      Branch[]
+
+  @@map("tenants")
+}
+
+model Subscription {
+  id                 String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId           String    @map("tenant_id") @db.Uuid
+  planId             String    @map("plan_id") @db.Uuid
+  status             String
+  trialEndsAt        DateTime? @map("trial_ends_at") @db.Timestamptz(6)
+  currentPeriodStart DateTime  @map("current_period_start") @db.Timestamptz(6)
+  currentPeriodEnd   DateTime  @map("current_period_end") @db.Timestamptz(6)
+  graceEndsAt        DateTime? @map("grace_ends_at") @db.Timestamptz(6)
+  cancelAtPeriodEnd  Boolean   @default(false) @map("cancel_at_period_end")
+  externalRef        String?   @map("external_ref")
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  tenant             Tenant    @relation(fields: [tenantId], references: [id])
+  plan               Plan      @relation(fields: [planId], references: [id])
+
+  @@index([tenantId])
+  @@map("subscriptions")
+}
+
+model PlatformUser {
+  id               String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email            String            @unique
+  passwordHash     String            @map("password_hash")
+  fullName         String            @map("full_name")
+  role             String
+  disabledAt       DateTime?         @map("disabled_at") @db.Timestamptz(6)
+  failedLoginCount Int               @default(0) @map("failed_login_count")
+  lockedUntil      DateTime?         @map("locked_until") @db.Timestamptz(6)
+  lastLoginAt      DateTime?         @map("last_login_at") @db.Timestamptz(6)
+  createdAt        DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
+  sessions         PlatformSession[]
+
+  @@map("platform_users")
+}
+
+model PlatformSession {
+  id             String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  platformUserId String       @map("platform_user_id") @db.Uuid
+  tokenHash      String       @unique @map("token_hash")
+  csrfTokenHash  String       @map("csrf_token_hash")
+  ip             String?
+  userAgent      String?      @map("user_agent")
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  lastSeenAt     DateTime     @default(now()) @map("last_seen_at") @db.Timestamptz(6)
+  idleExpiresAt  DateTime     @map("idle_expires_at") @db.Timestamptz(6)
+  expiresAt      DateTime     @map("expires_at") @db.Timestamptz(6)
+  platformUser   PlatformUser @relation(fields: [platformUserId], references: [id], onDelete: Cascade)
+
+  @@map("platform_sessions")
+}
+
+model PlatformAuditLog {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  platformUserId String?  @map("platform_user_id") @db.Uuid
+  action         String
+  targetType     String   @map("target_type")
+  targetId       String?  @map("target_id") @db.Uuid
+  tenantId       String?  @map("tenant_id") @db.Uuid
+  ip             String?
+  requestId      String?  @map("request_id")
+  changes        Json?
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([tenantId, createdAt])
+  @@map("platform_audit_logs")
+}
+
+// ───────────────────────────── Identity ─────────────────────────────
+
+model User {
+  id               String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email            String               @unique
+  /// NULL until the invited user sets a password through the invite link.
+  passwordHash     String?              @map("password_hash")
+  fullName         String               @map("full_name")
+  locale           String               @default("ar-EG")
+  emailVerifiedAt  DateTime?            @map("email_verified_at") @db.Timestamptz(6)
+  lastLoginAt      DateTime?            @map("last_login_at") @db.Timestamptz(6)
+  disabledAt       DateTime?            @map("disabled_at") @db.Timestamptz(6)
+  failedLoginCount Int                  @default(0) @map("failed_login_count")
+  lockedUntil      DateTime?            @map("locked_until") @db.Timestamptz(6)
+  createdAt        DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
+  sessions         Session[]
+  memberships      Membership[]
+  resetTokens      PasswordResetToken[]
+
+  @@map("users")
+}
+
+model Session {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId         String   @map("user_id") @db.Uuid
+  tokenHash      String   @unique @map("token_hash")
+  csrfTokenHash  String   @map("csrf_token_hash")
+  activeTenantId String?  @map("active_tenant_id") @db.Uuid
+  ip             String?
+  userAgent      String?  @map("user_agent")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  lastSeenAt     DateTime @default(now()) @map("last_seen_at") @db.Timestamptz(6)
+  idleExpiresAt  DateTime @map("idle_expires_at") @db.Timestamptz(6)
+  expiresAt      DateTime @map("expires_at") @db.Timestamptz(6)
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+model PasswordResetToken {
+  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  tokenHash String    @unique @map("token_hash")
+  purpose   String
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz(6)
+  usedAt    DateTime? @map("used_at") @db.Timestamptz(6)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("password_reset_tokens")
+}
+
+model Permission {
+  key             String           @id
+  module          String
+  isSensitive     Boolean          @map("is_sensitive")
+  rolePermissions RolePermission[]
+
+  @@map("permissions")
+}
+
+model Role {
+  id              String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId        String           @map("tenant_id") @db.Uuid
+  name            String
+  templateKey     String?          @map("template_key")
+  isSystem        Boolean          @default(false) @map("is_system")
+  rowVersion      Int              @default(1) @map("row_version")
+  createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdBy       String?          @map("created_by") @db.Uuid
+  updatedBy       String?          @map("updated_by") @db.Uuid
+  rolePermissions RolePermission[]
+  memberships     Membership[]
+
+  @@index([tenantId])
+  @@map("roles")
+}
+
+model RolePermission {
+  tenantId      String     @map("tenant_id") @db.Uuid
+  roleId        String     @map("role_id") @db.Uuid
+  permissionKey String     @map("permission_key")
+  role          Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission    Permission @relation(fields: [permissionKey], references: [key])
+
+  @@id([roleId, permissionKey])
+  @@index([tenantId])
+  @@map("role_permissions")
+}
+
+model Membership {
+  id          String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId    String             @map("tenant_id") @db.Uuid
+  userId      String             @map("user_id") @db.Uuid
+  roleId      String             @map("role_id") @db.Uuid
+  status      String             @default("active")
+  allBranches Boolean            @default(true) @map("all_branches")
+  rowVersion  Int                @default(1) @map("row_version")
+  createdAt   DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdBy   String?            @map("created_by") @db.Uuid
+  updatedBy   String?            @map("updated_by") @db.Uuid
+  tenant      Tenant             @relation(fields: [tenantId], references: [id])
+  user        User               @relation(fields: [userId], references: [id])
+  role        Role               @relation(fields: [roleId], references: [id])
+  branches    MembershipBranch[]
+
+  @@unique([tenantId, userId])
+  @@index([userId])
+  @@map("memberships")
+}
+
+model MembershipBranch {
+  tenantId     String     @map("tenant_id") @db.Uuid
+  membershipId String     @map("membership_id") @db.Uuid
+  branchId     String     @map("branch_id") @db.Uuid
+  membership   Membership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  branch       Branch     @relation(fields: [branchId], references: [id])
+
+  @@id([membershipId, branchId])
+  @@index([tenantId])
+  @@map("membership_branches")
+}
+
+model AuditLog {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  actorType  String   @map("actor_type")
+  actorId    String?  @map("actor_id") @db.Uuid
+  branchId   String?  @map("branch_id") @db.Uuid
+  action     String
+  entityType String   @map("entity_type")
+  entityId   String?  @map("entity_id") @db.Uuid
+  changes    Json?
+  requestId  String?  @map("request_id")
+  ip         String?
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([tenantId, entityType, entityId, createdAt])
+  @@index([tenantId, createdAt])
+  @@map("audit_logs")
+}
+
+// ───────────────────────────── Setup ─────────────────────────────
+
+model TenantSettings {
+  tenantId                   String   @id @map("tenant_id") @db.Uuid
+  priceIncludesTax           Boolean  @default(true) @map("price_includes_tax")
+  taxRounding                String   @default("line") @map("tax_rounding")
+  allowNegativeStock         Boolean  @default(true) @map("allow_negative_stock")
+  valuationMethod            String   @default("weighted_average") @map("valuation_method")
+  postingGranularity         String   @default("per_document") @map("posting_granularity")
+  businessDayCutoff          String   @default("04:00") @map("business_day_cutoff")
+  leaseDays                  Int      @default(7) @map("lease_days")
+  refundReturnsStockDefault  Boolean  @default(false) @map("refund_returns_stock_default")
+  serviceChargeRate          Decimal  @default(0) @map("service_charge_rate") @db.Decimal(9, 6)
+  serviceChargeTaxCategoryId String?  @map("service_charge_tax_category_id") @db.Uuid
+  maxDiscountPct             Decimal  @default(0.2) @map("max_discount_pct") @db.Decimal(9, 6)
+  rowVersion                 Int      @default(1) @map("row_version")
+  updatedAt                  DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  updatedBy                  String?  @map("updated_by") @db.Uuid
+  tenant                     Tenant   @relation(fields: [tenantId], references: [id])
+
+  @@map("tenant_settings")
+}
+
+model Branch {
+  id                String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId          String             @map("tenant_id") @db.Uuid
+  code              String
+  nameAr            String             @map("name_ar")
+  nameEn            String             @map("name_en")
+  address           String?
+  phone             String?
+  timezone          String
+  currencyCode      String             @map("currency_code") @db.Char(3)
+  taxRegistrationNo String?            @map("tax_registration_no")
+  status            String             @default("active")
+  rowVersion        Int                @default(1) @map("row_version")
+  createdAt         DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdBy         String?            @map("created_by") @db.Uuid
+  updatedBy         String?            @map("updated_by") @db.Uuid
+  tenant            Tenant             @relation(fields: [tenantId], references: [id])
+  warehouses        Warehouse[]
+  memberships       MembershipBranch[]
+
+  @@unique([tenantId, code])
+  @@map("branches")
+}
+
+model Warehouse {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  branchId  String?  @map("branch_id") @db.Uuid
+  code      String
+  name      String
+  kind      String
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  branch    Branch?  @relation(fields: [branchId], references: [id])
+
+  @@unique([tenantId, code])
+  @@index([branchId])
+  @@map("warehouses")
+}
+
+// Phase 3 models reference tenants/branches/accounts by plain columns; the same-tenant composite foreign
+// keys are declared in SQL (migration 20261030010100_slice_security).
+
+// ───────────────────────────── Taxes & payment methods ─────────────────────────────
+
+model TaxRate {
+  id              String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId        String            @map("tenant_id") @db.Uuid
+  code            String
+  nameAr          String            @map("name_ar")
+  nameEn          String            @map("name_en")
+  rate            Decimal           @db.Decimal(9, 6)
+  kind            String
+  validFrom       DateTime          @map("valid_from") @db.Timestamptz(6)
+  validTo         DateTime?         @map("valid_to") @db.Timestamptz(6)
+  outputAccountId String?           @map("output_account_id") @db.Uuid
+  createdAt       DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
+  categoryRates   TaxCategoryRate[]
+
+  @@unique([tenantId, code])
+  @@map("tax_rates")
+}
+
+model TaxCategory {
+  id         String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId   String            @map("tenant_id") @db.Uuid
+  code       String
+  nameAr     String            @map("name_ar")
+  nameEn     String            @map("name_en")
+  archivedAt DateTime?         @map("archived_at") @db.Timestamptz(6)
+  createdAt  DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
+  rates      TaxCategoryRate[]
+
+  @@unique([tenantId, code])
+  @@map("tax_categories")
+}
+
+model TaxCategoryRate {
+  id            String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId      String      @map("tenant_id") @db.Uuid
+  taxCategoryId String      @map("tax_category_id") @db.Uuid
+  taxRateId     String      @map("tax_rate_id") @db.Uuid
+  appliesTo     String      @map("applies_to")
+  sequence      Int         @default(1)
+  taxCategory   TaxCategory @relation(fields: [taxCategoryId], references: [id])
+  taxRate       TaxRate     @relation(fields: [taxRateId], references: [id])
+
+  @@unique([taxCategoryId, taxRateId, appliesTo])
+  @@map("tax_category_rates")
+}
+
+model PaymentMethod {
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId          String   @map("tenant_id") @db.Uuid
+  code              String
+  nameAr            String   @map("name_ar")
+  nameEn            String   @map("name_en")
+  kind              String
+  accountId         String   @map("account_id") @db.Uuid
+  opensDrawer       Boolean  @default(false) @map("opens_drawer")
+  allowsChange      Boolean  @default(false) @map("allows_change")
+  requiresReference Boolean  @default(false) @map("requires_reference")
+  isActive          Boolean  @default(true) @map("is_active")
+  sort              Int      @default(0)
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([tenantId, code])
+  @@map("payment_methods")
+}
+
+// ───────────────────────────── Catalog ─────────────────────────────
+
+model Category {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId   String    @map("tenant_id") @db.Uuid
+  parentId   String?   @map("parent_id") @db.Uuid
+  nameAr     String    @map("name_ar")
+  nameEn     String    @map("name_en")
+  sort       Int       @default(0)
+  /// data: URL (svg/png/jpeg/webp, ≤ ~256 KB): shown on the POS tiles of the category's items.
+  image      String?
+  archivedAt DateTime? @map("archived_at") @db.Timestamptz(6)
+  rowVersion Int       @default(1) @map("row_version")
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  products   Product[]
+
+  @@index([tenantId])
+  @@map("categories")
+}
+
+model Product {
+  id            String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId      String           @map("tenant_id") @db.Uuid
+  categoryId    String           @map("category_id") @db.Uuid
+  sku           String?
+  nameAr        String           @map("name_ar")
+  nameEn        String           @map("name_en")
+  kind          String           @default("menu_item")
+  taxCategoryId String           @map("tax_category_id") @db.Uuid
+  archivedAt    DateTime?        @map("archived_at") @db.Timestamptz(6)
+  rowVersion    Int              @default(1) @map("row_version")
+  createdAt     DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdBy     String?          @map("created_by") @db.Uuid
+  updatedBy     String?          @map("updated_by") @db.Uuid
+  category      Category         @relation(fields: [categoryId], references: [id])
+  variants      ProductVariant[]
+
+  @@index([tenantId])
+  @@map("products")
+}
+
+model ProductVariant {
+  id         String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId   String         @map("tenant_id") @db.Uuid
+  productId  String         @map("product_id") @db.Uuid
+  nameAr     String?        @map("name_ar")
+  nameEn     String?        @map("name_en")
+  sku        String?
+  isDefault  Boolean        @default(false) @map("is_default")
+  sort       Int            @default(0)
+  archivedAt DateTime?      @map("archived_at") @db.Timestamptz(6)
+  createdAt  DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
+  product    Product        @relation(fields: [productId], references: [id])
+  prices     ProductPrice[]
+
+  @@index([productId])
+  @@map("product_variants")
+}
+
+model ProductPrice {
+  id           String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId     String         @map("tenant_id") @db.Uuid
+  variantId    String         @map("variant_id") @db.Uuid
+  branchId     String?        @map("branch_id") @db.Uuid
+  channel      String?
+  price        Decimal        @db.Decimal(19, 4)
+  currencyCode String         @map("currency_code") @db.Char(3)
+  validFrom    DateTime       @map("valid_from") @db.Timestamptz(6)
+  validTo      DateTime?      @map("valid_to") @db.Timestamptz(6)
+  createdAt    DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdBy    String?        @map("created_by") @db.Uuid
+  variant      ProductVariant @relation(fields: [variantId], references: [id])
+
+  @@index([variantId])
+  @@map("product_prices")
+}
+
+// ───────────────────────────── Devices ─────────────────────────────
+
+model Device {
+  id                 String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId           String        @map("tenant_id") @db.Uuid
+  branchId           String        @map("branch_id") @db.Uuid
+  code               String
+  name               String
+  kind               String        @default("pos")
+  status             String        @default("pending_pairing")
+  pairingCodeHash    String?       @unique @map("pairing_code_hash")
+  pairingExpiresAt   DateTime?     @map("pairing_expires_at") @db.Timestamptz(6)
+  appVersion         String?       @map("app_version")
+  osVersion          String?       @map("os_version")
+  lastSeenAt         DateTime?     @map("last_seen_at") @db.Timestamptz(6)
+  localSchemaVersion Int?          @map("local_schema_version")
+  createdAt          DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdBy          String?       @map("created_by") @db.Uuid
+  tokens             DeviceToken[]
+
+  @@unique([tenantId, branchId, code])
+  @@map("devices")
+}
+
+model DeviceToken {
+  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId  String    @map("tenant_id") @db.Uuid
+  deviceId  String    @map("device_id") @db.Uuid
+  kind      String
+  tokenHash String    @unique @map("token_hash")
+  familyId  String    @map("family_id") @db.Uuid
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz(6)
+  usedAt    DateTime? @map("used_at") @db.Timestamptz(6)
+  revokedAt DateTime? @map("revoked_at") @db.Timestamptz(6)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  device    Device    @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@index([deviceId])
+  @@map("device_tokens")
+}
+
+// ───────────────────────────── Accounting ─────────────────────────────
+
+model Account {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId      String    @map("tenant_id") @db.Uuid
+  code          String
+  nameAr        String    @map("name_ar")
+  nameEn        String    @map("name_en")
+  parentId      String?   @map("parent_id") @db.Uuid
+  type          String
+  subtype       String?
+  normalBalance String    @map("normal_balance")
+  isPostable    Boolean   @default(true) @map("is_postable")
+  isControl     Boolean   @default(false) @map("is_control")
+  archivedAt    DateTime? @map("archived_at") @db.Timestamptz(6)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([tenantId, code])
+  @@map("accounts")
+}
+
+model FiscalYear {
+  id             String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId       String             @map("tenant_id") @db.Uuid
+  name           String
+  startDate      DateTime           @map("start_date") @db.Date
+  endDate        DateTime           @map("end_date") @db.Date
+  status         String             @default("open")
+  /// The year-end entry moving profit and loss to retained earnings (null when the year had no P&L activity).
+  closingEntryId String?            @map("closing_entry_id") @db.Uuid
+  closedAt       DateTime?          @map("closed_at") @db.Timestamptz(6)
+  closedBy       String?            @map("closed_by") @db.Uuid
+  createdAt      DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+  periods        AccountingPeriod[]
+
+  @@unique([tenantId, name])
+  @@map("fiscal_years")
+}
+
+model AccountingPeriod {
+  id           String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId     String     @map("tenant_id") @db.Uuid
+  fiscalYearId String     @map("fiscal_year_id") @db.Uuid
+  periodNo     Int        @map("period_no")
+  startDate    DateTime   @map("start_date") @db.Date
+  endDate      DateTime   @map("end_date") @db.Date
+  status       String     @default("open")
+  closedAt     DateTime?  @map("closed_at") @db.Timestamptz(6)
+  closedBy     String?    @map("closed_by") @db.Uuid
+  createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
+  fiscalYear   FiscalYear @relation(fields: [fiscalYearId], references: [id])
+
+  @@unique([fiscalYearId, periodNo])
+  @@index([tenantId, startDate])
+  @@map("accounting_periods")
+}
+
+model JournalEntry {
+  id           String        @id @db.Uuid
+  tenantId     String        @map("tenant_id") @db.Uuid
+  number       String
+  entryDate    DateTime      @map("entry_date") @db.Date
+  originalDate DateTime?     @map("original_date") @db.Date
+  periodId     String        @map("period_id") @db.Uuid
+  sourceType   String        @map("source_type")
+  sourceId     String?       @map("source_id") @db.Uuid
+  purpose      String        @default("main")
+  status       String
+  reversalOfId String?       @map("reversal_of_id") @db.Uuid
+  memo         String?
+  postedAt     DateTime?     @map("posted_at") @db.Timestamptz(6)
+  postedBy     String?       @map("posted_by") @db.Uuid
+  createdAt    DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  lines        JournalLine[]
+
+  @@unique([tenantId, number])
+  @@index([tenantId, entryDate])
+  @@map("journal_entries")
+}
+
+model JournalLine {
+  id             String       @id @db.Uuid
+  tenantId       String       @map("tenant_id") @db.Uuid
+  journalEntryId String       @map("journal_entry_id") @db.Uuid
+  lineNo         Int          @map("line_no")
+  accountId      String       @map("account_id") @db.Uuid
+  debit          Decimal      @default(0) @db.Decimal(19, 4)
+  credit         Decimal      @default(0) @db.Decimal(19, 4)
+  currencyCode   String       @map("currency_code") @db.Char(3)
+  branchId       String?      @map("branch_id") @db.Uuid
+  description    String?
+  entry          JournalEntry @relation(fields: [journalEntryId], references: [id])
+
+  @@unique([journalEntryId, lineNo])
+  @@index([tenantId, accountId])
+  @@map("journal_lines")
+}
+
+model AccountingMapping {
+  id         String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId   String  @map("tenant_id") @db.Uuid
+  mappingKey String  @map("mapping_key")
+  scopeType  String  @default("tenant") @map("scope_type")
+  scopeId    String? @map("scope_id") @db.Uuid
+  accountId  String  @map("account_id") @db.Uuid
+
+  @@index([tenantId, mappingKey])
+  @@map("accounting_mappings")
+}
+
+model DocumentSequence {
+  tenantId  String @map("tenant_id") @db.Uuid
+  docType   String @map("doc_type")
+  scopeKey  String @map("scope_key")
+  nextValue BigInt @default(1) @map("next_value")
+
+  @@id([tenantId, docType, scopeKey])
+  @@map("document_sequences")
+}
+
+// ───────────────────────────── Sales ─────────────────────────────
+
+model Order {
+  id             String      @id @db.Uuid
+  tenantId       String      @map("tenant_id") @db.Uuid
+  branchId       String      @map("branch_id") @db.Uuid
+  deviceId       String      @map("device_id") @db.Uuid
+  localNumber    String      @map("local_number")
+  channel        String
+  status         String
+  openedAt       DateTime    @map("opened_at") @db.Timestamptz(6)
+  closedAt       DateTime?   @map("closed_at") @db.Timestamptz(6)
+  businessDate   DateTime    @map("business_date") @db.Date
+  catalogVersion Int?        @map("catalog_version")
+  operationId    String?     @map("operation_id") @db.Uuid
+  tableId        String?     @map("table_id") @db.Uuid
+  guests         Int?
+  employeeId     String?     @map("employee_id") @db.Uuid
+  discount       Json?
+  cancelReason   String?     @map("cancel_reason")
+  createdAt      DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  items          OrderItem[]
+
+  @@unique([tenantId, localNumber])
+  @@map("orders")
+}
+
+model OrderItem {
+  id             String  @id @db.Uuid
+  tenantId       String  @map("tenant_id") @db.Uuid
+  orderId        String  @map("order_id") @db.Uuid
+  lineNo         Int     @map("line_no")
+  variantId      String  @map("variant_id") @db.Uuid
+  productNameAr  String  @map("product_name_ar")
+  productNameEn  String  @map("product_name_en")
+  qty            Decimal @db.Decimal(19, 6)
+  unitPrice      Decimal @map("unit_price") @db.Decimal(19, 4)
+  taxCategoryId  String  @map("tax_category_id") @db.Uuid
+  status         String  @default("sent")
+  voidReason     String? @map("void_reason")
+  voidApprovalId String? @map("void_approval_id") @db.Uuid
+  modifiers      Json    @default("[]")
+  order          Order   @relation(fields: [orderId], references: [id])
+
+  @@unique([orderId, lineNo])
+  @@map("order_items")
+}
+
+model Invoice {
+  id                 String        @id @db.Uuid
+  tenantId           String        @map("tenant_id") @db.Uuid
+  orderId            String        @map("order_id") @db.Uuid
+  branchId           String        @map("branch_id") @db.Uuid
+  deviceId           String        @map("device_id") @db.Uuid
+  number             String
+  currencyCode       String        @map("currency_code") @db.Char(3)
+  pricesIncludeTax   Boolean       @map("prices_include_tax")
+  subtotal           Decimal       @db.Decimal(19, 4)
+  discountTotal      Decimal       @default(0) @map("discount_total") @db.Decimal(19, 4)
+  serviceChargeTotal Decimal       @default(0) @map("service_charge_total") @db.Decimal(19, 4)
+  taxTotal           Decimal       @map("tax_total") @db.Decimal(19, 4)
+  roundingTotal      Decimal       @default(0) @map("rounding_total") @db.Decimal(19, 4)
+  total              Decimal       @db.Decimal(19, 4)
+  paidTotal          Decimal       @map("paid_total") @db.Decimal(19, 4)
+  refundedTotal      Decimal       @default(0) @map("refunded_total") @db.Decimal(19, 4)
+  status             String        @default("issued")
+  paymentStatus      String        @map("payment_status")
+  issuedAt           DateTime      @map("issued_at") @db.Timestamptz(6)
+  businessDate       DateTime      @map("business_date") @db.Date
+  catalogVersion     Int?          @map("catalog_version")
+  journalEntryId     String?       @map("journal_entry_id") @db.Uuid
+  operationId        String        @map("operation_id") @db.Uuid
+  employeeId         String?       @map("employee_id") @db.Uuid
+  cashSessionId      String?       @map("cash_session_id") @db.Uuid
+  receivedAt         DateTime      @default(now()) @map("received_at") @db.Timestamptz(6)
+  lines              InvoiceLine[]
+  taxes              InvoiceTax[]
+  payments           Payment[]
+
+  @@unique([tenantId, number])
+  @@index([tenantId, businessDate])
+  @@map("invoices")
+}
+
+model InvoiceLine {
+  id              String  @id @db.Uuid
+  tenantId        String  @map("tenant_id") @db.Uuid
+  invoiceId       String  @map("invoice_id") @db.Uuid
+  lineNo          Int     @map("line_no")
+  orderItemId     String  @map("order_item_id") @db.Uuid
+  variantId       String  @map("variant_id") @db.Uuid
+  descriptionAr   String  @map("description_ar")
+  descriptionEn   String  @map("description_en")
+  qty             Decimal @db.Decimal(19, 6)
+  unitPrice       Decimal @map("unit_price") @db.Decimal(19, 4)
+  netAmount       Decimal @map("net_amount") @db.Decimal(19, 4)
+  taxAmount       Decimal @map("tax_amount") @db.Decimal(19, 4)
+  grossAmount     Decimal @map("gross_amount") @db.Decimal(19, 4)
+  taxCategoryId   String  @map("tax_category_id") @db.Uuid
+  taxes           Json
+  modifiers       Json    @default("[]")
+  discount        Json?
+  discountAmount  Decimal @default(0) @map("discount_amount") @db.Decimal(19, 4)
+  recipeVersionId String? @map("recipe_version_id") @db.Uuid
+  refundedQty     Decimal @default(0) @map("refunded_qty") @db.Decimal(19, 6)
+  invoice         Invoice @relation(fields: [invoiceId], references: [id])
+
+  @@unique([invoiceId, lineNo])
+  @@map("invoice_lines")
+}
+
+model InvoiceTax {
+  id          String  @id @db.Uuid
+  tenantId    String  @map("tenant_id") @db.Uuid
+  invoiceId   String  @map("invoice_id") @db.Uuid
+  taxRateId   String  @map("tax_rate_id") @db.Uuid
+  rate        Decimal @db.Decimal(9, 6)
+  taxableBase Decimal @map("taxable_base") @db.Decimal(19, 4)
+  taxAmount   Decimal @map("tax_amount") @db.Decimal(19, 4)
+  invoice     Invoice @relation(fields: [invoiceId], references: [id])
+
+  @@unique([invoiceId, taxRateId])
+  @@map("invoice_taxes")
+}
+
+model Payment {
+  id              String   @id @db.Uuid
+  tenantId        String   @map("tenant_id") @db.Uuid
+  invoiceId       String   @map("invoice_id") @db.Uuid
+  direction       String   @default("in")
+  paymentMethodId String   @map("payment_method_id") @db.Uuid
+  amount          Decimal  @db.Decimal(19, 4)
+  tendered        Decimal? @db.Decimal(19, 4)
+  changeGiven     Decimal? @map("change_given") @db.Decimal(19, 4)
+  reference       String?
+  occurredAt      DateTime @map("occurred_at") @db.Timestamptz(6)
+  journalEntryId  String?  @map("journal_entry_id") @db.Uuid
+  operationId     String   @map("operation_id") @db.Uuid
+  cashSessionId   String?  @map("cash_session_id") @db.Uuid
+  refundId        String?  @map("refund_id") @db.Uuid
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  invoice         Invoice  @relation(fields: [invoiceId], references: [id])
+
+  @@index([tenantId, invoiceId])
+  @@map("payments")
+}
+
+model SaleDiscrepancy {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId   String    @map("tenant_id") @db.Uuid
+  invoiceId  String    @map("invoice_id") @db.Uuid
+  kind       String
+  details    Json
+  status     String    @default("open")
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  resolvedAt DateTime? @map("resolved_at") @db.Timestamptz(6)
+  resolvedBy String?   @map("resolved_by") @db.Uuid
+
+  @@index([tenantId, status])
+  @@map("sale_discrepancies")
+}
+
+// ───────────────────────────── Sync ─────────────────────────────
+
+model SyncBatch {
+  id                  String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId            String   @map("tenant_id") @db.Uuid
+  deviceId            String   @map("device_id") @db.Uuid
+  batchId             String   @map("batch_id") @db.Uuid
+  receivedAt          DateTime @default(now()) @map("received_at") @db.Timestamptz(6)
+  opCount             Int      @map("op_count")
+  accepted            Int      @default(0)
+  duplicates          Int      @default(0)
+  rejected            Int      @default(0)
+  retryable           Int      @default(0)
+  clientAppVersion    String   @map("client_app_version")
+  clientSchemaVersion Int      @map("client_schema_version")
+  durationMs          Int?     @map("duration_ms")
+
+  @@index([tenantId, deviceId, receivedAt])
+  @@map("sync_batches")
+}
+
+model SyncOperation {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId        String    @map("tenant_id") @db.Uuid
+  operationId     String    @map("operation_id") @db.Uuid
+  deviceId        String    @map("device_id") @db.Uuid
+  branchId        String    @map("branch_id") @db.Uuid
+  operationType   String    @map("operation_type")
+  schemaVersion   Int       @map("schema_version")
+  occurredAt      DateTime  @map("occurred_at") @db.Timestamptz(6)
+  localSeq        BigInt    @map("local_seq")
+  payloadHash     String    @map("payload_hash")
+  payload         Json?
+  status          String
+  errorCode       String?   @map("error_code")
+  errorDetail     Json?     @map("error_detail")
+  serverRefs      Json?     @map("server_refs")
+  attempts        Int       @default(1)
+  firstReceivedAt DateTime  @default(now()) @map("first_received_at") @db.Timestamptz(6)
+  processedAt     DateTime? @map("processed_at") @db.Timestamptz(6)
+
+  @@unique([tenantId, operationId])
+  @@index([tenantId, status])
+  @@map("sync_operations")
+}
+
+model IdempotencyKey {
+  tenantId     String    @map("tenant_id") @db.Uuid
+  scope        String
+  key          String
+  requestHash  String    @map("request_hash")
+  status       String
+  resourceRefs Json?     @map("resource_refs")
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  expiresAt    DateTime? @map("expires_at") @db.Timestamptz(6)
+
+  @@id([tenantId, scope, key])
+  @@map("idempotency_keys")
+}
+
+model ChangeLog {
+  changeSeq  BigInt   @id @default(autoincrement()) @map("change_seq")
+  tenantId   String   @map("tenant_id") @db.Uuid
+  entityType String   @map("entity_type")
+  entityId   String   @map("entity_id") @db.Uuid
+  branchId   String?  @map("branch_id") @db.Uuid
+  op         String
+  changedAt  DateTime @default(now()) @map("changed_at") @db.Timestamptz(6)
+
+  @@index([tenantId, changeSeq])
+  @@map("change_log")
+}
+
+model DeviceSyncState {
+  deviceId      String    @id @map("device_id") @db.Uuid
+  tenantId      String    @map("tenant_id") @db.Uuid
+  pullCursor    BigInt    @default(0) @map("pull_cursor")
+  lastPushAt    DateTime? @map("last_push_at") @db.Timestamptz(6)
+  lastPullAt    DateTime? @map("last_pull_at") @db.Timestamptz(6)
+  lastErrorCode String?   @map("last_error_code")
+  clockSkewMs   Int?      @map("clock_skew_ms")
+
+  @@map("device_sync_state")
+}
+
+// ───────────────────────────── Employees & POS operations (Phase 4) ─────────────────────────────
+
+model Employee {
+  id         String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId   String           @map("tenant_id") @db.Uuid
+  employeeNo String           @map("employee_no")
+  fullNameAr String           @map("full_name_ar")
+  fullNameEn String           @map("full_name_en")
+  roleId     String           @map("role_id") @db.Uuid
+  posPinHash String?          @map("pos_pin_hash")
+  status     String           @default("active")
+  rowVersion Int              @default(1) @map("row_version")
+  createdAt  DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdBy  String?          @map("created_by") @db.Uuid
+  updatedBy  String?          @map("updated_by") @db.Uuid
+  branches   EmployeeBranch[]
+
+  @@unique([tenantId, employeeNo])
+  @@map("employees")
+}
+
+model EmployeeBranch {
+  tenantId   String   @map("tenant_id") @db.Uuid
+  employeeId String   @map("employee_id") @db.Uuid
+  branchId   String   @map("branch_id") @db.Uuid
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@id([employeeId, branchId])
+  @@index([tenantId, branchId])
+  @@map("employee_branches")
+}
+
+model Approval {
+  id                 String   @id @db.Uuid
+  tenantId           String   @map("tenant_id") @db.Uuid
+  action             String
+  approverEmployeeId String   @map("approver_employee_id") @db.Uuid
+  subjectType        String   @map("subject_type")
+  subjectId          String   @map("subject_id") @db.Uuid
+  method             String   @default("pin")
+  occurredAt         DateTime @map("occurred_at") @db.Timestamptz(6)
+  deviceId           String?  @map("device_id") @db.Uuid
+  operationId        String?  @map("operation_id") @db.Uuid
+  /// Whether the approver held the required permission at processing time (false → discrepancy).
+  authorised         Boolean
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([tenantId, subjectType, subjectId])
+  @@map("approvals")
+}
+
+model CashSession {
+  id                 String         @id @db.Uuid
+  tenantId           String         @map("tenant_id") @db.Uuid
+  branchId           String         @map("branch_id") @db.Uuid
+  deviceId           String         @map("device_id") @db.Uuid
+  employeeId         String         @map("employee_id") @db.Uuid
+  status             String         @default("open")
+  openedAt           DateTime       @map("opened_at") @db.Timestamptz(6)
+  openingFloat       Decimal        @map("opening_float") @db.Decimal(19, 4)
+  closedAt           DateTime?      @map("closed_at") @db.Timestamptz(6)
+  closedBy           String?        @map("closed_by") @db.Uuid
+  expectedCash       Decimal?       @map("expected_cash") @db.Decimal(19, 4)
+  deviceExpectedCash Decimal?       @map("device_expected_cash") @db.Decimal(19, 4)
+  countedCash        Decimal?       @map("counted_cash") @db.Decimal(19, 4)
+  variance           Decimal?       @db.Decimal(19, 4)
+  countedBreakdown   Json?          @map("counted_breakdown")
+  journalEntryId     String?        @map("journal_entry_id") @db.Uuid
+  openedOperationId  String         @map("opened_operation_id") @db.Uuid
+  closedOperationId  String?        @map("closed_operation_id") @db.Uuid
+  movements          CashMovement[]
+
+  @@index([tenantId, branchId, openedAt])
+  @@map("cash_sessions")
+}
+
+model CashMovement {
+  id             String      @id @db.Uuid
+  tenantId       String      @map("tenant_id") @db.Uuid
+  cashSessionId  String      @map("cash_session_id") @db.Uuid
+  kind           String
+  amount         Decimal     @db.Decimal(19, 4)
+  reason         String
+  employeeId     String      @map("employee_id") @db.Uuid
+  approvalId     String?     @map("approval_id") @db.Uuid
+  occurredAt     DateTime    @map("occurred_at") @db.Timestamptz(6)
+  journalEntryId String?     @map("journal_entry_id") @db.Uuid
+  operationId    String      @map("operation_id") @db.Uuid
+  session        CashSession @relation(fields: [cashSessionId], references: [id])
+
+  @@map("cash_movements")
+}
+
+model Refund {
+  id             String       @id @db.Uuid
+  tenantId       String       @map("tenant_id") @db.Uuid
+  invoiceId      String       @map("invoice_id") @db.Uuid
+  branchId       String       @map("branch_id") @db.Uuid
+  deviceId       String       @map("device_id") @db.Uuid
+  number         String
+  employeeId     String       @map("employee_id") @db.Uuid
+  cashSessionId  String?      @map("cash_session_id") @db.Uuid
+  reason         String
+  netTotal       Decimal      @map("net_total") @db.Decimal(19, 4)
+  taxTotal       Decimal      @map("tax_total") @db.Decimal(19, 4)
+  total          Decimal      @db.Decimal(19, 4)
+  approvalId     String       @map("approval_id") @db.Uuid
+  issuedAt       DateTime     @map("issued_at") @db.Timestamptz(6)
+  journalEntryId String?      @map("journal_entry_id") @db.Uuid
+  operationId    String       @map("operation_id") @db.Uuid
+  receivedAt     DateTime     @default(now()) @map("received_at") @db.Timestamptz(6)
+  lines          RefundLine[]
+
+  @@unique([tenantId, number])
+  @@index([tenantId, invoiceId])
+  @@map("refunds")
+}
+
+model RefundLine {
+  id            String  @id @db.Uuid
+  tenantId      String  @map("tenant_id") @db.Uuid
+  refundId      String  @map("refund_id") @db.Uuid
+  invoiceLineId String  @map("invoice_line_id") @db.Uuid
+  qty           Decimal @db.Decimal(19, 6)
+  netAmount     Decimal @map("net_amount") @db.Decimal(19, 4)
+  taxAmount     Decimal @map("tax_amount") @db.Decimal(19, 4)
+  grossAmount   Decimal @map("gross_amount") @db.Decimal(19, 4)
+  taxes         Json
+  returnToStock Boolean @default(false) @map("return_to_stock")
+  refund        Refund  @relation(fields: [refundId], references: [id])
+
+  @@map("refund_lines")
+}
+
+// ───────────────────────────── Modifiers & floor plan (Phase 4b) ─────────────────────────────
+
+model ModifierGroup {
+  id         String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId   String     @map("tenant_id") @db.Uuid
+  nameAr     String     @map("name_ar")
+  nameEn     String     @map("name_en")
+  minSelect  Int        @default(0) @map("min_select")
+  maxSelect  Int        @default(1) @map("max_select")
+  archivedAt DateTime?  @map("archived_at") @db.Timestamptz(6)
+  createdAt  DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
+  modifiers  Modifier[]
+
+  @@map("modifier_groups")
+}
+
+model Modifier {
+  id         String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId   String        @map("tenant_id") @db.Uuid
+  groupId    String        @map("group_id") @db.Uuid
+  nameAr     String        @map("name_ar")
+  nameEn     String        @map("name_en")
+  priceDelta Decimal       @default(0) @map("price_delta") @db.Decimal(19, 4)
+  sort       Int           @default(0)
+  archivedAt DateTime?     @map("archived_at") @db.Timestamptz(6)
+  createdAt  DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+  group      ModifierGroup @relation(fields: [groupId], references: [id])
+
+  @@map("modifiers")
+}
+
+model ProductModifierGroup {
+  id        String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId  String @map("tenant_id") @db.Uuid
+  productId String @map("product_id") @db.Uuid
+  groupId   String @map("group_id") @db.Uuid
+  sort      Int    @default(0)
+
+  @@unique([productId, groupId])
+  @@map("product_modifier_groups")
+}
+
+model ServiceArea {
+  id        String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId  String        @map("tenant_id") @db.Uuid
+  branchId  String        @map("branch_id") @db.Uuid
+  nameAr    String        @map("name_ar")
+  nameEn    String        @map("name_en")
+  sort      Int           @default(0)
+  createdAt DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+  tables    DiningTable[]
+
+  @@unique([branchId, nameEn])
+  @@map("service_areas")
+}
+
+model DiningTable {
+  id            String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId      String      @map("tenant_id") @db.Uuid
+  branchId      String      @map("branch_id") @db.Uuid
+  serviceAreaId String      @map("service_area_id") @db.Uuid
+  label         String
+  seats         Int         @default(4)
+  isActive      Boolean     @default(true) @map("is_active")
+  createdAt     DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime    @updatedAt @map("updated_at") @db.Timestamptz(6)
+  area          ServiceArea @relation(fields: [serviceAreaId], references: [id])
+
+  @@unique([branchId, label])
+  @@map("dining_tables")
+}
+
+// ───────────────────────────── Inventory (Phase 5a) ─────────────────────────────
+
+model InventoryItem {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId     String    @map("tenant_id") @db.Uuid
+  code         String
+  nameAr       String    @map("name_ar")
+  nameEn       String    @map("name_en")
+  kind         String    @default("ingredient")
+  baseUnit     String    @map("base_unit")
+  standardCost Decimal   @default(0) @map("standard_cost") @db.Decimal(19, 6)
+  conversions  Json      @default("{}")
+  minQty       Decimal?  @map("min_qty") @db.Decimal(19, 6)
+  archivedAt   DateTime? @map("archived_at") @db.Timestamptz(6)
+  rowVersion   Int       @default(1) @map("row_version")
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([tenantId, code])
+  @@map("inventory_items")
+}
+
+model Recipe {
+  id        String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId  String          @map("tenant_id") @db.Uuid
+  variantId String          @map("variant_id") @db.Uuid
+  createdAt DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  versions  RecipeVersion[]
+
+  @@unique([tenantId, variantId])
+  @@map("recipes")
+}
+
+model RecipeVersion {
+  id            String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId      String       @map("tenant_id") @db.Uuid
+  recipeId      String       @map("recipe_id") @db.Uuid
+  version       Int
+  yieldQty      Decimal      @map("yield_qty") @db.Decimal(19, 6)
+  status        String       @default("active")
+  effectiveFrom DateTime     @map("effective_from") @db.Timestamptz(6)
+  createdBy     String?      @map("created_by") @db.Uuid
+  createdAt     DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  recipe        Recipe       @relation(fields: [recipeId], references: [id])
+  lines         RecipeLine[]
+
+  @@unique([recipeId, version])
+  @@map("recipe_versions")
+}
+
+model RecipeLine {
+  id              String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId        String        @map("tenant_id") @db.Uuid
+  recipeVersionId String        @map("recipe_version_id") @db.Uuid
+  itemId          String        @map("item_id") @db.Uuid
+  qty             Decimal       @db.Decimal(19, 6)
+  unit            String
+  qtyBase         Decimal       @map("qty_base") @db.Decimal(19, 6)
+  wastePct        Decimal       @default(0) @map("waste_pct") @db.Decimal(9, 6)
+  version         RecipeVersion @relation(fields: [recipeVersionId], references: [id])
+
+  @@map("recipe_lines")
+}
+
+model StockMovement {
+  id             String   @id @db.Uuid
+  tenantId       String   @map("tenant_id") @db.Uuid
+  warehouseId    String   @map("warehouse_id") @db.Uuid
+  itemId         String   @map("item_id") @db.Uuid
+  movementType   String   @map("movement_type")
+  qtyBase        Decimal  @map("qty_base") @db.Decimal(19, 6)
+  unitCost       Decimal  @map("unit_cost") @db.Decimal(19, 6)
+  totalCost      Decimal  @map("total_cost") @db.Decimal(19, 4)
+  sourceType     String   @map("source_type")
+  sourceId       String   @map("source_id") @db.Uuid
+  sourceLineId   String?  @map("source_line_id") @db.Uuid
+  businessDate   DateTime @map("business_date") @db.Date
+  occurredAt     DateTime @map("occurred_at") @db.Timestamptz(6)
+  postedAt       DateTime @default(now()) @map("posted_at") @db.Timestamptz(6)
+  journalEntryId String?  @map("journal_entry_id") @db.Uuid
+  reasonCode     String?  @map("reason_code")
+
+  @@index([tenantId, itemId, warehouseId, postedAt])
+  @@index([tenantId, sourceType, sourceId])
+  @@map("stock_movements")
+}
+
+model StockBalance {
+  tenantId    String   @map("tenant_id") @db.Uuid
+  warehouseId String   @map("warehouse_id") @db.Uuid
+  itemId      String   @map("item_id") @db.Uuid
+  qtyBase     Decimal  @default(0) @map("qty_base") @db.Decimal(19, 6)
+  totalValue  Decimal  @default(0) @map("total_value") @db.Decimal(19, 4)
+  avgUnitCost Decimal  @default(0) @map("avg_unit_cost") @db.Decimal(19, 6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@id([warehouseId, itemId])
+  @@index([tenantId])
+  @@map("stock_balances")
+}
+
+model StockAdjustment {
+  id             String                @id @db.Uuid
+  tenantId       String                @map("tenant_id") @db.Uuid
+  warehouseId    String                @map("warehouse_id") @db.Uuid
+  number         String
+  kind           String
+  reason         String
+  status         String                @default("posted")
+  postedAt       DateTime              @default(now()) @map("posted_at") @db.Timestamptz(6)
+  journalEntryId String?               @map("journal_entry_id") @db.Uuid
+  createdBy      String?               @map("created_by") @db.Uuid
+  lines          StockAdjustmentLine[]
+
+  @@unique([tenantId, number])
+  @@map("stock_adjustments")
+}
+
+model StockAdjustmentLine {
+  id           String          @id @db.Uuid
+  tenantId     String          @map("tenant_id") @db.Uuid
+  adjustmentId String          @map("adjustment_id") @db.Uuid
+  itemId       String          @map("item_id") @db.Uuid
+  qty          Decimal         @db.Decimal(19, 6)
+  unit         String
+  qtyBase      Decimal         @map("qty_base") @db.Decimal(19, 6)
+  unitCost     Decimal?        @map("unit_cost") @db.Decimal(19, 6)
+  adjustment   StockAdjustment @relation(fields: [adjustmentId], references: [id])
+
+  @@map("stock_adjustment_lines")
+}
+
+model StockCount {
+  id             String           @id @db.Uuid
+  tenantId       String           @map("tenant_id") @db.Uuid
+  warehouseId    String           @map("warehouse_id") @db.Uuid
+  number         String
+  status         String           @default("in_progress")
+  snapshotAt     DateTime         @map("snapshot_at") @db.Timestamptz(6)
+  approvedBy     String?          @map("approved_by") @db.Uuid
+  approvedAt     DateTime?        @map("approved_at") @db.Timestamptz(6)
+  journalEntryId String?          @map("journal_entry_id") @db.Uuid
+  createdBy      String?          @map("created_by") @db.Uuid
+  createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  lines          StockCountLine[]
+
+  @@unique([tenantId, number])
+  @@map("stock_counts")
+}
+
+model StockCountLine {
+  id            String     @id @db.Uuid
+  tenantId      String     @map("tenant_id") @db.Uuid
+  countId       String     @map("count_id") @db.Uuid
+  itemId        String     @map("item_id") @db.Uuid
+  systemQty     Decimal    @map("system_qty") @db.Decimal(19, 6)
+  countedQty    Decimal?   @map("counted_qty") @db.Decimal(19, 6)
+  differenceQty Decimal?   @map("difference_qty") @db.Decimal(19, 6)
+  count         StockCount @relation(fields: [countId], references: [id])
+
+  @@unique([countId, itemId])
+  @@map("stock_count_lines")
+}
+
+model StockTransfer {
+  id                String              @id @db.Uuid
+  tenantId          String              @map("tenant_id") @db.Uuid
+  number            String
+  fromWarehouseId   String              @map("from_warehouse_id") @db.Uuid
+  toWarehouseId     String              @map("to_warehouse_id") @db.Uuid
+  status            String              @default("draft")
+  dispatchedAt      DateTime?           @map("dispatched_at") @db.Timestamptz(6)
+  dispatchedBy      String?             @map("dispatched_by") @db.Uuid
+  receivedAt        DateTime?           @map("received_at") @db.Timestamptz(6)
+  receivedBy        String?             @map("received_by") @db.Uuid
+  dispatchJournalId String?             @map("dispatch_journal_id") @db.Uuid
+  receiveJournalId  String?             @map("receive_journal_id") @db.Uuid
+  createdBy         String?             @map("created_by") @db.Uuid
+  createdAt         DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  lines             StockTransferLine[]
+
+  @@unique([tenantId, number])
+  @@map("stock_transfers")
+}
+
+model StockTransferLine {
+  id          String        @id @db.Uuid
+  tenantId    String        @map("tenant_id") @db.Uuid
+  transferId  String        @map("transfer_id") @db.Uuid
+  itemId      String        @map("item_id") @db.Uuid
+  qtySent     Decimal       @map("qty_sent") @db.Decimal(19, 6)
+  qtyReceived Decimal?      @map("qty_received") @db.Decimal(19, 6)
+  unitCost    Decimal?      @map("unit_cost") @db.Decimal(19, 6)
+  transfer    StockTransfer @relation(fields: [transferId], references: [id])
+
+  @@unique([transferId, itemId])
+  @@map("stock_transfer_lines")
+}
+
+// ───────────────────────────── Purchasing (Phase 5b) ─────────────────────────────
+// Same-tenant composite foreign keys, checks and immutability live in SQL (20261101000100_purchasing_security).
+
+model Supplier {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId         String    @map("tenant_id") @db.Uuid
+  code             String
+  nameAr           String    @map("name_ar")
+  nameEn           String    @map("name_en")
+  taxNumber        String?   @map("tax_number")
+  phone            String?
+  email            String?
+  paymentTermsDays Int       @default(0) @map("payment_terms_days")
+  archivedAt       DateTime? @map("archived_at") @db.Timestamptz(6)
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([tenantId, code])
+  @@map("suppliers")
+}
+
+model PurchaseOrder {
+  id           String              @id @db.Uuid
+  tenantId     String              @map("tenant_id") @db.Uuid
+  number       String
+  supplierId   String              @map("supplier_id") @db.Uuid
+  warehouseId  String              @map("warehouse_id") @db.Uuid
+  status       String              @default("draft")
+  expectedDate DateTime?           @map("expected_date") @db.Date
+  notes        String?
+  total        Decimal             @db.Decimal(19, 4)
+  createdBy    String?             @map("created_by") @db.Uuid
+  approvedBy   String?             @map("approved_by") @db.Uuid
+  approvedAt   DateTime?           @map("approved_at") @db.Timestamptz(6)
+  createdAt    DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  lines        PurchaseOrderLine[]
+
+  @@unique([tenantId, number])
+  @@index([tenantId, supplierId])
+  @@map("purchase_orders")
+}
+
+model PurchaseOrderLine {
+  id              String        @id @db.Uuid
+  tenantId        String        @map("tenant_id") @db.Uuid
+  orderId         String        @map("order_id") @db.Uuid
+  itemId          String        @map("item_id") @db.Uuid
+  qty             Decimal       @db.Decimal(19, 6)
+  unit            String
+  qtyBase         Decimal       @map("qty_base") @db.Decimal(19, 6)
+  unitPrice       Decimal       @map("unit_price") @db.Decimal(19, 6)
+  qtyReceivedBase Decimal       @default(0) @map("qty_received_base") @db.Decimal(19, 6)
+  order           PurchaseOrder @relation(fields: [orderId], references: [id])
+
+  @@unique([orderId, itemId])
+  @@map("purchase_order_lines")
+}
+
+model GoodsReceipt {
+  id             String             @id @db.Uuid
+  tenantId       String             @map("tenant_id") @db.Uuid
+  number         String
+  supplierId     String             @map("supplier_id") @db.Uuid
+  orderId        String?            @map("order_id") @db.Uuid
+  warehouseId    String             @map("warehouse_id") @db.Uuid
+  supplierRef    String?            @map("supplier_ref")
+  goodsTotal     Decimal            @map("goods_total") @db.Decimal(19, 4)
+  chargesTotal   Decimal            @map("charges_total") @db.Decimal(19, 4)
+  charges        Json               @default("[]")
+  receivedAt     DateTime           @default(now()) @map("received_at") @db.Timestamptz(6)
+  journalEntryId String?            @map("journal_entry_id") @db.Uuid
+  createdBy      String?            @map("created_by") @db.Uuid
+  lines          GoodsReceiptLine[]
+
+  @@unique([tenantId, number])
+  @@index([tenantId, supplierId])
+  @@map("goods_receipts")
+}
+
+model GoodsReceiptLine {
+  id              String       @id @db.Uuid
+  tenantId        String       @map("tenant_id") @db.Uuid
+  receiptId       String       @map("receipt_id") @db.Uuid
+  orderLineId     String?      @map("order_line_id") @db.Uuid
+  itemId          String       @map("item_id") @db.Uuid
+  qty             Decimal      @db.Decimal(19, 6)
+  unit            String
+  qtyBase         Decimal      @map("qty_base") @db.Decimal(19, 6)
+  unitPrice       Decimal      @map("unit_price") @db.Decimal(19, 6)
+  goodsValue      Decimal      @map("goods_value") @db.Decimal(19, 4)
+  chargesValue    Decimal      @map("charges_value") @db.Decimal(19, 4)
+  qtyInvoicedBase Decimal      @default(0) @map("qty_invoiced_base") @db.Decimal(19, 6)
+  qtyReturnedBase Decimal      @default(0) @map("qty_returned_base") @db.Decimal(19, 6)
+  /// Goods value already taken out of "goods received not invoiced" by invoices and returns.
+  valueCleared    Decimal      @default(0) @map("value_cleared") @db.Decimal(19, 4)
+  receipt         GoodsReceipt @relation(fields: [receiptId], references: [id])
+
+  @@unique([receiptId, itemId])
+  @@map("goods_receipt_lines")
+}
+
+model SupplierInvoice {
+  id                String                @id @db.Uuid
+  tenantId          String                @map("tenant_id") @db.Uuid
+  number            String
+  supplierId        String                @map("supplier_id") @db.Uuid
+  supplierInvoiceNo String                @map("supplier_invoice_no")
+  invoiceDate       DateTime              @map("invoice_date") @db.Date
+  dueDate           DateTime              @map("due_date") @db.Date
+  subtotal          Decimal               @db.Decimal(19, 4)
+  taxTotal          Decimal               @map("tax_total") @db.Decimal(19, 4)
+  total             Decimal               @db.Decimal(19, 4)
+  amountPaid        Decimal               @default(0) @map("amount_paid") @db.Decimal(19, 4)
+  status            String                @default("open")
+  journalEntryId    String?               @map("journal_entry_id") @db.Uuid
+  createdBy         String?               @map("created_by") @db.Uuid
+  createdAt         DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  lines             SupplierInvoiceLine[]
+
+  @@unique([tenantId, number])
+  @@unique([tenantId, supplierId, supplierInvoiceNo])
+  @@map("supplier_invoices")
+}
+
+model SupplierInvoiceLine {
+  id            String          @id @db.Uuid
+  tenantId      String          @map("tenant_id") @db.Uuid
+  invoiceId     String          @map("invoice_id") @db.Uuid
+  receiptLineId String?         @map("receipt_line_id") @db.Uuid
+  accountId     String?         @map("account_id") @db.Uuid
+  description   String?
+  qtyBase       Decimal?        @map("qty_base") @db.Decimal(19, 6)
+  amount        Decimal         @db.Decimal(19, 4)
+  taxAmount     Decimal         @map("tax_amount") @db.Decimal(19, 4)
+  grniCleared   Decimal         @default(0) @map("grni_cleared") @db.Decimal(19, 4)
+  priceVariance Decimal         @default(0) @map("price_variance") @db.Decimal(19, 4)
+  invoice       SupplierInvoice @relation(fields: [invoiceId], references: [id])
+
+  @@map("supplier_invoice_lines")
+}
+
+model SupplierPayment {
+  id             String                      @id @db.Uuid
+  tenantId       String                      @map("tenant_id") @db.Uuid
+  number         String
+  supplierId     String                      @map("supplier_id") @db.Uuid
+  method         String
+  amount         Decimal                     @db.Decimal(19, 4)
+  reference      String?
+  paidAt         DateTime                    @default(now()) @map("paid_at") @db.Timestamptz(6)
+  journalEntryId String?                     @map("journal_entry_id") @db.Uuid
+  createdBy      String?                     @map("created_by") @db.Uuid
+  allocations    SupplierPaymentAllocation[]
+
+  @@unique([tenantId, number])
+  @@index([tenantId, supplierId])
+  @@map("supplier_payments")
+}
+
+model SupplierPaymentAllocation {
+  id        String          @id @db.Uuid
+  tenantId  String          @map("tenant_id") @db.Uuid
+  paymentId String          @map("payment_id") @db.Uuid
+  invoiceId String          @map("invoice_id") @db.Uuid
+  amount    Decimal         @db.Decimal(19, 4)
+  payment   SupplierPayment @relation(fields: [paymentId], references: [id])
+
+  @@unique([paymentId, invoiceId])
+  @@map("supplier_payment_allocations")
+}
+
+model SupplierReturn {
+  id             String               @id @db.Uuid
+  tenantId       String               @map("tenant_id") @db.Uuid
+  number         String
+  supplierId     String               @map("supplier_id") @db.Uuid
+  receiptId      String               @map("receipt_id") @db.Uuid
+  warehouseId    String               @map("warehouse_id") @db.Uuid
+  reason         String
+  journalEntryId String?              @map("journal_entry_id") @db.Uuid
+  createdBy      String?              @map("created_by") @db.Uuid
+  createdAt      DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  lines          SupplierReturnLine[]
+
+  @@unique([tenantId, number])
+  @@map("supplier_returns")
+}
+
+model SupplierReturnLine {
+  id            String         @id @db.Uuid
+  tenantId      String         @map("tenant_id") @db.Uuid
+  returnId      String         @map("return_id") @db.Uuid
+  receiptLineId String         @map("receipt_line_id") @db.Uuid
+  itemId        String         @map("item_id") @db.Uuid
+  qty           Decimal        @db.Decimal(19, 6)
+  unit          String
+  qtyBase       Decimal        @map("qty_base") @db.Decimal(19, 6)
+  grniValue     Decimal        @map("grni_value") @db.Decimal(19, 4)
+  stockValue    Decimal        @map("stock_value") @db.Decimal(19, 4)
+  return        SupplierReturn @relation(fields: [returnId], references: [id])
+
+  @@map("supplier_return_lines")
+}
+
+// ───────────────────────────── Bank reconciliation (Phase 6b) ─────────────────────────────
+
+model BankStatement {
+  id             String              @id @db.Uuid
+  tenantId       String              @map("tenant_id") @db.Uuid
+  accountId      String              @map("account_id") @db.Uuid
+  reference      String
+  startDate      DateTime            @map("start_date") @db.Date
+  endDate        DateTime            @map("end_date") @db.Date
+  openingBalance Decimal             @map("opening_balance") @db.Decimal(19, 4)
+  closingBalance Decimal             @map("closing_balance") @db.Decimal(19, 4)
+  status         String              @default("open")
+  createdBy      String?             @map("created_by") @db.Uuid
+  createdAt      DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  reconciledAt   DateTime?           @map("reconciled_at") @db.Timestamptz(6)
+  reconciledBy   String?             @map("reconciled_by") @db.Uuid
+  lines          BankStatementLine[]
+
+  @@unique([tenantId, accountId, reference])
+  @@map("bank_statements")
+}
+
+model BankStatementLine {
+  id            String        @id @db.Uuid
+  tenantId      String        @map("tenant_id") @db.Uuid
+  statementId   String        @map("statement_id") @db.Uuid
+  lineNo        Int           @map("line_no")
+  txnDate       DateTime      @map("txn_date") @db.Date
+  description   String
+  reference     String?
+  amount        Decimal       @db.Decimal(19, 4)
+  /// The posted journal line (same account, same signed amount) this bank line is matched to.
+  journalLineId String?       @unique @map("journal_line_id") @db.Uuid
+  matchedAt     DateTime?     @map("matched_at") @db.Timestamptz(6)
+  matchedBy     String?       @map("matched_by") @db.Uuid
+  statement     BankStatement @relation(fields: [statementId], references: [id])
+
+  @@unique([statementId, lineNo])
+  @@map("bank_statement_lines")
+}
+
+// ───────────────────────────── Kitchen display (Phase 7a) ─────────────────────────────
+
+model KitchenStation {
+  id                String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId          String                @map("tenant_id") @db.Uuid
+  branchId          String                @map("branch_id") @db.Uuid
+  code              String
+  nameAr            String                @map("name_ar")
+  nameEn            String                @map("name_en")
+  delayThresholdSec Int                   @default(600) @map("delay_threshold_sec")
+  isDefault         Boolean               @default(false) @map("is_default")
+  isActive          Boolean               @default(true) @map("is_active")
+  createdAt         DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime              @updatedAt @map("updated_at") @db.Timestamptz(6)
+  routes            KitchenStationRoute[]
+
+  @@unique([branchId, code])
+  @@index([tenantId, branchId])
+  @@map("kitchen_stations")
+}
+
+/// Category → station of one branch (a category goes to one station per branch).
+model KitchenStationRoute {
+  tenantId   String         @map("tenant_id") @db.Uuid
+  branchId   String         @map("branch_id") @db.Uuid
+  categoryId String         @map("category_id") @db.Uuid
+  stationId  String         @map("station_id") @db.Uuid
+  station    KitchenStation @relation(fields: [stationId], references: [id])
+
+  @@id([branchId, categoryId])
+  @@index([stationId])
+  @@map("kitchen_station_routes")
+}
+
+model KitchenTicket {
+  id          String              @id @db.Uuid
+  tenantId    String              @map("tenant_id") @db.Uuid
+  branchId    String              @map("branch_id") @db.Uuid
+  stationId   String              @map("station_id") @db.Uuid
+  orderId     String              @map("order_id") @db.Uuid
+  fireId      String              @map("fire_id") @db.Uuid
+  ticketNo    Int                 @map("ticket_no")
+  label       String
+  channel     String
+  status      String              @default("new")
+  firedAt     DateTime            @map("fired_at") @db.Timestamptz(6)
+  receivedAt  DateTime            @default(now()) @map("received_at") @db.Timestamptz(6)
+  startedAt   DateTime?           @map("started_at") @db.Timestamptz(6)
+  readyAt     DateTime?           @map("ready_at") @db.Timestamptz(6)
+  servedAt    DateTime?           @map("served_at") @db.Timestamptz(6)
+  cancelledAt DateTime?           @map("cancelled_at") @db.Timestamptz(6)
+  items       KitchenTicketItem[]
+
+  @@index([tenantId, branchId, status])
+  @@index([tenantId, orderId])
+  @@map("kitchen_tickets")
+}
+
+model KitchenTicketItem {
+  id          String        @id @db.Uuid
+  tenantId    String        @map("tenant_id") @db.Uuid
+  ticketId    String        @map("ticket_id") @db.Uuid
+  orderItemId String        @map("order_item_id") @db.Uuid
+  nameAr      String        @map("name_ar")
+  nameEn      String        @map("name_en")
+  qty         Decimal       @db.Decimal(19, 6)
+  modifiers   Json          @default("[]")
+  voidedAt    DateTime?     @map("voided_at") @db.Timestamptz(6)
+  voidReason  String?       @map("void_reason")
+  ticket      KitchenTicket @relation(fields: [ticketId], references: [id])
+
+  @@index([tenantId, orderItemId])
+  @@map("kitchen_ticket_items")
+}
+
+/// Append-only history of every ticket state change (P7-5: state changes are audited).
+model KitchenTicketEvent {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  ticketId   String   @map("ticket_id") @db.Uuid
+  fromStatus String?  @map("from_status")
+  toStatus   String   @map("to_status")
+  actorType  String   @map("actor_type")
+  actorId    String?  @map("actor_id") @db.Uuid
+  note       String?
+  occurredAt DateTime @default(now()) @map("occurred_at") @db.Timestamptz(6)
+
+  @@index([tenantId, ticketId])
+  @@map("kitchen_ticket_events")
+}

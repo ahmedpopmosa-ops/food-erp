@@ -1,0 +1,22 @@
+{
+  "name": "@ros/domain",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Pure business rules shared by the POS and the API (money, rounding, state machines). No I/O.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "decimal.js": "^10.6.0"
+  },
+  "devDependencies": {
+    "vitest": "^3.2.4"
+  }
+}

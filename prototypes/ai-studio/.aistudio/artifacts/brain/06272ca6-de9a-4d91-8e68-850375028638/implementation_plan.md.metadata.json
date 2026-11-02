@@ -1,0 +1,6 @@
+{
+  "summary":  "Phase 1 Architecture, Technical Specification, ER Diagram, Data Dictionary, and Phased Roadmap for RestaurantOS: a production-grade multi-tenant SaaS Restaurant Management System with offline-first POS, dual-language Arabic/English RTL support, inventory, recipes, purchasing, kitchen display, double-entry accounting, and platform operator administration.",
+  "updatedAt":  "2026-10-29T14:57:30.517140903Z",
+  "requestFeedback":  true,
+  "userFacing":  true
+}

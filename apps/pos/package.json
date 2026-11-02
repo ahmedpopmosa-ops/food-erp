@@ -1,0 +1,29 @@
+{
+  "name": "@ros/pos",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Browser POS: the offline-first POS core in the browser, with SQLite in OPFS (no server needed to sell).",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit -p tsconfig.json && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@ros/contracts": "^0.1.0",
+    "@ros/domain": "^0.1.0",
+    "@ros/pos-core": "^0.1.0",
+    "@sqlite.org/sqlite-wasm": "3.53.4-build2",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "tailwindcss": "^4.3.3",
+    "vite": "^8.3.5"
+  }
+}

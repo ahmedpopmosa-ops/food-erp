@@ -1,0 +1,37 @@
+{
+  "name": "@ros/pos-core",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Offline-first POS core: local SQLite schema, orders, finalize, outbox, receipts and sync client. Storage goes through an atomic-batch driver (Node SQLite now, Tauri/Rust later).",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js",
+    "./node": "./dist/node.js"
+  },
+  "typesVersions": {
+    "*": {
+      "node": [
+        "dist/node.d.ts"
+      ]
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@ros/contracts": "^0.1.0",
+    "@ros/domain": "^0.1.0"
+  },
+  "devDependencies": {
+    "vitest": "^3.2.4"
+  }
+}

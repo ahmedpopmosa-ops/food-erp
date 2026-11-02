@@ -1,0 +1,16 @@
+node_modules/
+dist/
+build/
+coverage/
+target/
+.data/
+graphify-out/
+*.db
+*.db-wal
+*.db-shm
+*.log
+*.tsbuildinfo
+.DS_Store
+.env
+.env.*
+!.env.example

@@ -1,0 +1,29 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "api",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev:api"],
+      "port": 4000
+    },
+    {
+      "name": "web",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev:web"],
+      "port": 5173
+    },
+    {
+      "name": "ros-api-4100",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "set API_PORT=4100&& npm run dev:api"],
+      "port": 4100
+    },
+    {
+      "name": "ros-web-4100",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "set API_PORT=4100&& npm run dev:web"],
+      "port": 5173
+    }
+  ]
+}

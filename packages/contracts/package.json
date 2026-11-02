@@ -1,0 +1,22 @@
+{
+  "name": "@ros/contracts",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Zod schemas, permission keys and role templates shared by the API and all frontends",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "vitest": "^3.2.4"
+  }
+}

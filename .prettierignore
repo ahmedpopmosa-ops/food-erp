@@ -1,0 +1,9 @@
+dist
+node_modules
+coverage
+.data
+package-lock.json
+apps/api/prisma/migrations
+apps/api/openapi.json
+docs
+prototypes
