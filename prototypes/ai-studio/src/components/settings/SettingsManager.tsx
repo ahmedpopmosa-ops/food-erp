@@ -70,7 +70,7 @@ export const SettingsManager: React.FC = () => {
   // Form states initialized from store
   const tenant = state.tenant;
   const currentSettings: TenantSettings = tenant.settings || {
-    defaultTaxRate: 0.15,
+    defaultTaxRate: 0.14,
     taxCalculation: 'EXCLUDED',
     defaultServiceCharge: 0,
     defaultOrderType: 'DINE_IN',
@@ -94,7 +94,7 @@ export const SettingsManager: React.FC = () => {
   const [tradeNameEn, setTradeNameEn] = useState(tenant.tradeNameEn);
   const [taxRegistrationNumber, setTaxRegistrationNumber] = useState(tenant.taxRegistrationNumber);
   const [commercialRegister, setCommercialRegister] = useState(tenant.commercialRegister);
-  const [currency, setCurrency] = useState(tenant.currency || 'SAR');
+  const [currency, setCurrency] = useState(tenant.currency || 'EGP');
   const [timezone, setTimezone] = useState(tenant.timezone || 'Asia/Riyadh');
 
   // Financial & Tax form

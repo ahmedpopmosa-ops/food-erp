@@ -244,7 +244,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({ onOpenSettings }) => {
       items: [],
       subtotal: 0,
       discountAmount: 0,
-      taxRate: 0.15,
+      taxRate: state.tenant.settings?.defaultTaxRate ?? 0.14,
       taxAmount: 0,
       serviceCharge: 0,
       grandTotal: 0,
@@ -289,7 +289,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({ onOpenSettings }) => {
     const discount = overrideDiscount !== undefined ? overrideDiscount : (order.discountAmount || 0);
     const effectiveDiscount = Math.min(subtotal, Math.max(0, discount));
     const taxableBase = Math.max(0, subtotal - effectiveDiscount);
-    const taxRate = order.taxRate || 0.15;
+    const taxRate = order.taxRate ?? 0.14;
     const taxAmount = Number((taxableBase * taxRate).toFixed(2));
     const grandTotal = Number((taxableBase + taxAmount).toFixed(2));
 

@@ -184,7 +184,7 @@ export const CallCenterHub: React.FC = () => {
 
   // Calculation
   const subtotal = Number(cartItems.reduce((sum, item) => sum + item.totalPrice, 0).toFixed(2));
-  const taxRate = state.tenant.settings?.defaultTaxRate || 0.15;
+  const taxRate = state.tenant.settings?.defaultTaxRate ?? 0.14;
   const taxableBase = subtotal + deliveryFee;
   const taxAmount = Number((taxableBase * taxRate).toFixed(2));
   const grandTotal = Number((taxableBase + taxAmount).toFixed(2));

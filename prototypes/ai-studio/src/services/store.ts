@@ -408,7 +408,7 @@ const storeActions = {
       const invoiceNum = `INV-${branchCode}-2026-${String(invoiceSeq).padStart(4, '0')}`;
 
       const subtotal = Number(params.items.reduce((sum, item) => sum + item.totalPrice, 0).toFixed(2));
-      const taxRate = state.tenant.settings?.defaultTaxRate || 0.15;
+      const taxRate = state.tenant.settings?.defaultTaxRate ?? 0.14;
       const taxableBase = subtotal + (params.deliveryFee || 0);
       const taxAmount = Number((taxableBase * taxRate).toFixed(2));
       const grandTotal = Number((taxableBase + taxAmount).toFixed(2));
@@ -1098,7 +1098,7 @@ const storeActions = {
         items: [],
         subtotal: 0,
         discountAmount: 0,
-        taxRate: 0.15,
+        taxRate: state.tenant.settings?.defaultTaxRate ?? 0.14,
         taxAmount: 0,
         serviceCharge: 0,
         grandTotal: 0,
@@ -1168,7 +1168,7 @@ const storeActions = {
           if (o.id !== orderId) return o;
           const discountAmount = Math.max(0, amount);
           const taxableBase = Math.max(0, o.subtotal - discountAmount + o.serviceCharge);
-          const taxAmount = Number((taxableBase * (o.taxRate || 0.15)).toFixed(2));
+          const taxAmount = Number((taxableBase * (o.taxRate ?? 0.14)).toFixed(2));
           const grandTotal = Number((taxableBase + taxAmount).toFixed(2));
           return {
             ...o,
@@ -1362,7 +1362,7 @@ const storeActions = {
       const updatedItems = order.items.filter((i) => i.id !== itemId);
       const subtotal = Number(updatedItems.reduce((acc, i) => acc + i.totalPrice, 0).toFixed(2));
       const taxableBase = Math.max(0, subtotal - (order.discountAmount || 0));
-      const taxAmount = Number((taxableBase * (order.taxRate || 0.15)).toFixed(2));
+      const taxAmount = Number((taxableBase * (order.taxRate ?? 0.14)).toFixed(2));
       const grandTotal = Number((taxableBase + taxAmount).toFixed(2));
 
       const updatedOrder: Order = {
@@ -1542,7 +1542,8 @@ const storeActions = {
           accountNameAr: 'إيرادات مبيعات الأطعمة والمشروبات',
           accountNameEn: 'Food & Beverage Sales Revenue',
           debit: 0,
-          credit: session.consolidatedSubtotal,
+          // Net of discount (and incl. service charge), so the entry balances against the amount collected.
+          credit: Number((session.consolidatedGrandTotal - session.consolidatedTax).toFixed(2)),
           memo: `إيراد مبيعات فاتورة طاولة ${session.tableNumber}`,
         },
         {
@@ -1733,9 +1734,7 @@ const storeActions = {
         const session = state.tableSessions.find((s) => s.id === order.sessionId);
         if (session && !session.isPaid) {
           // Calculate session totals before finalizing
-          return state.tableSessions.find((s) => s.id === order.sessionId)
-            ? (useRestaurantStore as any)().finalizeSessionPayment(order.sessionId, paymentMethod, tenderedAmount, changeAmount)
-            : { success: false, invoiceNumber: '' };
+          return storeActions.finalizeSessionPayment(order.sessionId, paymentMethod, tenderedAmount, changeAmount);
         }
       }
 
@@ -1813,7 +1812,8 @@ const storeActions = {
           accountNameAr: 'إيرادات مبيعات الأطعمة والمشروبات',
           accountNameEn: 'Food & Beverage Sales Revenue',
           debit: 0,
-          credit: order.subtotal,
+          // Net of discount (and incl. service charge), so the entry balances against the amount collected.
+          credit: Number((order.grandTotal - order.taxAmount).toFixed(2)),
           memo: `صافي إيراد مبيعات فاتورة ${invoiceNum}`,
         },
         {
@@ -2079,8 +2079,12 @@ const storeActions = {
     splitSessionBill: (sessionId: string, splitCount: number): number[] => {
       const session = state.tableSessions.find((s) => s.id === sessionId);
       if (!session || splitCount <= 0) return [];
-      const perGuest = Number((session.consolidatedGrandTotal / splitCount).toFixed(2));
-      return Array(splitCount).fill(perGuest);
+      // Work in piastres so the shares always add up to the total; the leftover goes to the last guest.
+      const totalCents = Math.round(session.consolidatedGrandTotal * 100);
+      const baseCents = Math.floor(totalCents / splitCount);
+      return Array.from({ length: splitCount }, (_, i) =>
+        (i === splitCount - 1 ? totalCents - baseCents * (splitCount - 1) : baseCents) / 100
+      );
     },
 
     reprintKitchenTicket: (orderId: string) => {
@@ -2547,7 +2551,7 @@ const storeActions = {
 
     updateTenantSettings: (settingsUpdates: Partial<TenantSettings>) => {
       const currentSettings = state.tenant.settings || {
-        defaultTaxRate: 0.15,
+        defaultTaxRate: 0.14,
         taxCalculation: 'EXCLUDED',
         defaultServiceCharge: 0,
         defaultOrderType: 'DINE_IN',

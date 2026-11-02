@@ -792,7 +792,7 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
                   </thead>
                   <tbody className="divide-y divide-slate-200">
                     {invoice.items.map((item, idx) => {
-                      const itemTax = item.totalPrice * 0.15;
+                      const itemTax = item.totalPrice * invoice.taxRate;
                       return (
                         <tr key={item.id} className="hover:bg-slate-50">
                           <td className="p-3 text-slate-400 font-mono text-center">{idx + 1}</td>

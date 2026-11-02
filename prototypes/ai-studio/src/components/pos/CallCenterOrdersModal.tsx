@@ -135,7 +135,7 @@ export const CallCenterOrdersModal: React.FC<CallCenterOrdersModalProps> = ({ on
         items: ord.items,
         subtotal: ord.subtotal,
         discountAmount: ord.discountAmount || 0,
-        taxRate: ord.taxRate || 0.15,
+        taxRate: ord.taxRate ?? 0.14,
         taxAmount: ord.taxAmount,
         deliveryFee: ord.deliveryFee || 0,
         grandTotal: ord.grandTotal,
