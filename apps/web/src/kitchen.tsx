@@ -101,7 +101,11 @@ export function KitchenPage({ tab, can }: { tab?: string; can: Can }) {
 
 const clock = (sec: number) => {
   const s = Math.max(0, Math.floor(sec));
-  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  // Past an hour: h:mm:ss, so a forgotten ticket reads 26:09:13 rather than 1569:13.
+  return h > 0 ? `${h}:${pad(m)}:${pad(s % 60)}` : `${m}:${pad(s % 60)}`;
 };
 
 function Display({ branchId, can }: { branchId: string; can: Can }) {
